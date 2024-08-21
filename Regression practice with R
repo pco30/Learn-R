@@ -1,0 +1,103 @@
+---
+title: "Predicting Income with Social Data"
+output: html_notebook
+---
+
+```{r message=FALSE, warning=FALSE}
+# Load packages and data
+library(ggplot2)
+library(dplyr)
+library(modelr)
+
+# Load the dataset
+psid <- read.csv("psid_2017.csv")
+# View data structure
+str(psid)
+
+# Plot age distribution
+plot_age <- psid %>% 
+  ggplot(aes(x=age)) +
+  geom_bar() +
+  labs(title = "Age Distribution in PSID Dataset", x = "Age", y = "Count")
+plot_age
+
+# Filter to reasonable age group and education group
+psid_clean <- psid %>%
+  filter(age >= 18 & age <= 75, education_years >= 5 & education_years <= 25)
+
+# Plot filtered age distribution
+plot_filtered_age <- psid_clean %>% 
+  ggplot(aes(x=age)) +
+  geom_bar() +
+  labs(title = "Filtered Age Distribution (18-75 years old)", x = "Age", y = "Count")
+plot_filtered_age
+
+# Plot education distribution
+education_plot <- psid_clean %>%
+  ggplot(aes(x=factor(education_years), y=labor_income)) +
+  geom_boxplot() +
+  labs(title = "Income Distribution by Education Level", x = "Years of Education", y = "Labor Income")
+education_plot 
+
+# Plot income distribution
+income_plot <- psid_clean %>%
+  ggplot(aes(x=labor_income)) +
+  geom_boxplot() +
+  labs(title = "Income Distribution", x = "Labor Income", y = "Count")
+income_plot
+
+# View income summary statistics
+summary(psid_clean$labor_income)
+
+# Plot mean income by age
+mean_income_by_age <- psid_clean %>%
+  group_by(age) %>%
+  summarise(mean_income = mean(labor_income)) %>%
+  ggplot(aes(x = age, y = mean_income)) +
+  geom_point() +
+  labs(title = "Mean Income by Age", x = "Age", y = "Mean Labor Income")
+mean_income_by_age
+
+# Subset data into training and testing sets
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(psid_clean), replace = TRUE, prob = c(0.6, 0.4))
+
+# Define training and testing datasets
+train <- psid_clean[sample, ]
+test <- psid_clean[!sample, ]
+
+# Build linear model
+model <- lm(labor_income ~ education_years, data = train)
+
+# Plot linear model against LOESS model
+plot <- ggplot(psid_clean, aes(x=education_years, y=labor_income)) +
+  geom_point() + 
+  geom_smooth(method = "lm", color = "blue", se = FALSE) + 
+  geom_smooth(se = FALSE, color = "red", method = "loess") +
+  labs(title = "Labor Income vs. Education Years", x = "Years of Education", y = "Labor Income")
+plot
+
+# Compute R-squared
+r_sq <- summary(model)$r.squared * 100
+sprintf("Based on a simple linear regression model, we have determined that %.2f percent of the variation in respondent income can be predicted by a respondent's education level.", r_sq)
+
+# Build second model with additional variables
+model_2 <- lm(labor_income ~ education_years + age + gender, data = train)
+r_sq_2 <- summary(model_2)$r.squared * 100
+sprintf("Based on a multiple linear regression model, we have determined that %.2f percent of the variation in respondent income can be predicted by a respondent's education level, age, and gender.", r_sq_2)
+
+# Plot predictions versus observed values
+plot <- test %>% 
+  add_predictions(model_2) %>%
+  ggplot(aes(x=age, y=labor_income)) +
+  geom_point() +
+  geom_line(aes(y = pred), color = "blue") +
+  labs(title = "Observed vs Predicted Labor Income by Age", x = "Age", y = "Labor Income")
+plot
+
+# View model summary
+summary(model_2)
+
+# Extract education coefficient
+education_coefficient <- model_2$coefficients["education_years"]
+sprintf("Based on a multiple linear regression model of education, age, and gender, for every additional year of formal education, the average American resident's income increases by $%.2f.", education_coefficient)
